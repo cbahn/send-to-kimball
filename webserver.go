@@ -50,7 +50,7 @@ func AboutHandler(response http.ResponseWriter, request *http.Request){
 // Respond to the URL /home with an html home page
 func HomeHandler(response http.ResponseWriter, request *http.Request){
 	response.Header().Set("Content-type", "text/html")
-	webpage, err := ioutil.ReadFile("home.html")
+	webpage, err := ioutil.ReadFile("index.html")
 	if err != nil { 
 		http.Error(response, fmt.Sprintf("home.html file error %v", err), 500)
 	}
@@ -74,8 +74,7 @@ func VoteGETHandler(response http.ResponseWriter, request *http.Request){
 func jsonReaderToMap(jsonReader io.ReadCloser) (map[string]string, error) {
 	jsonBytes, err :=  ioutil.ReadAll(jsonReader)
 	if err != nil {
-		// What could possibilty go wrong with this conversion?
-		panic(err) 
+		panic(err) // What could possibilty go wrong?
 	}
 
 	jsonMap := make(map[string]string)
@@ -165,6 +164,19 @@ func PicHandler(response http.ResponseWriter, request *http.Request){
 	http.ServeFile(response, request, filepath.Join(resourceFolder,resource[1]) )
 }
 
+// This recieves votes as POST requests to /vote and records them to the database
+func SendHandler(response http.ResponseWriter, request *http.Request){
+
+	request.ParseForm()
+
+	for k,v := range request.Form {
+		fmt.Printf("%s = %s\n",k,v)
+	}
+
+	fmt.Fprintln(response,"Registration successful. Your inner man is now aligned with nature")
+}
+
+
 
 func main(){
 	port := 8097
@@ -173,13 +185,19 @@ func main(){
 	// We're using gorilla/mux as the router because
 	// it's not garbage like the default one.
 	mux := mux.NewRouter()
-	
+
+	/*
 	mux.Handle("/generic/", 		http.HandlerFunc( GenericHandler  ))
 	mux.Handle("/about",			http.HandlerFunc( AboutHandler    ))
 	mux.Handle("/vote",				http.HandlerFunc( VoteGETHandler  )).Methods("GET")
 	mux.Handle("/vote",				http.HandlerFunc( VotePOSTHandler )).Methods("POST")
+	*/
+
 	mux.Handle("/res/{resource}",	http.HandlerFunc( ResHandler      ))
 	mux.Handle("/res/pic/{picture}",http.HandlerFunc( PicHandler	  ))
+	
+
+	mux.Handle("/send",				http.HandlerFunc( SendHandler	  )).Methods("POST")
 	mux.Handle("/", 				http.HandlerFunc( HomeHandler     )).Methods("GET")
 
 	// Start listing on a given port with these routes on this server.
