@@ -176,6 +176,18 @@ func SendHandler(response http.ResponseWriter, request *http.Request){
 	fmt.Fprintln(response,"Registration successful. Your inner man is now aligned with nature")
 }
 
+func ListHandler(response http.ResponseWriter, request *http.Request){
+	// Respond to the index url
+
+	response.Header().Set("Content-type", "text/html")
+	webpage, err := ioutil.ReadFile("list.html")
+	if err != nil { 
+		http.Error(response, fmt.Sprintf("home.html file error %v", err), 500)
+	}
+	fmt.Fprint(response, string(webpage));
+	fmt.Println("Sent response to /home")
+
+}
 
 
 func main(){
@@ -193,10 +205,11 @@ func main(){
 	mux.Handle("/vote",				http.HandlerFunc( VotePOSTHandler )).Methods("POST")
 	*/
 
-	mux.Handle("/res/{resource}",	http.HandlerFunc( ResHandler      ))
-	mux.Handle("/res/pic/{picture}",http.HandlerFunc( PicHandler	  ))
+	mux.Handle("/res/{resource}",	http.HandlerFunc( ResHandler      )).Methods("GET")
+	mux.Handle("/res/pic/{picture}",http.HandlerFunc( PicHandler	  )).Methods("GET")
 	
 
+	mux.Handle("/list",				http.HandlerFunc( ListHandler     )).Methods("GET")
 	mux.Handle("/send",				http.HandlerFunc( SendHandler	  )).Methods("POST")
 	mux.Handle("/", 				http.HandlerFunc( HomeHandler     )).Methods("GET")
 
