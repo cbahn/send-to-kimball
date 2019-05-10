@@ -1,23 +1,18 @@
 // database.go
 
-package main
+package db
 
 import (
 	"database/sql"
-	"time"
-	"fmt"
+//	"time"
+//	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"../structs"
 )
 
 /* Wow, this site is useful for go db stuff
  * https://www.alexedwards.net/blog/organising-database-access
  */
-
-type Task struct {
-	TaskId int
-	Title string
-	Date time.Time
-}
 
 func MysqlConnect() (db *sql.DB) {
 	username := "junco"
@@ -33,13 +28,30 @@ func MysqlConnect() (db *sql.DB) {
 	return db
 }
 
-func GetExampleTask(db *sql.DB) (*Task, error) {
+/*
+	Task_id     int
+	Timestamp   time.Time
+	Deleted     bool
+	Description string
+	Ip_address  string
+	Stamp       string
 
-	mytask := new(Task)
 
-	rows, err := db.Query("SELECT * FROM mytable LIMIT 1")
+	`task_id` int(11) NOT NULL AUTO_INCREMENT,
+	`timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	`deleted` tinyint(1) NOT NULL DEFAULT '0',
+	`description` text,
+	`ip_address` varchar(40) DEFAULT NULL,
+	`stamp` text DEFAULT NULL,
+	PRIMARY KEY (`task_id`)
+*/
 
-	fmt.Println("query worked fine")
+
+func GetExampleTask(db *sql.DB) (*structs.Task, error) {
+
+	mytask := new(structs.Task)
+
+	rows, err := db.Query("SELECT task_id, timestamp, deleted, description, ip_address, stamp FROM tasks LIMIT 1")
 
     if err != nil {
         return nil, err
@@ -47,7 +59,7 @@ func GetExampleTask(db *sql.DB) (*Task, error) {
 
     rows.Next()
 
-	err = rows.Scan(&mytask.TaskId, &mytask.Title, &mytask.Date)
+	err = rows.Scan(&mytask.Task_id, &mytask.Timestamp, &mytask.Deleted, &mytask.Description, &mytask.Ip_address, &mytask.Stamp)
 	if err != nil {
 		return nil, err
 	}
@@ -60,21 +72,43 @@ func InsertNewTask(db *sql.DB, ipAddress string, description string, stamp strin
 	return err
 }
 
+func SelectAllVisibleTaskDescriptions(db *sql.DB) (*structs.TaskList, error) {
+	myTaskList := new(structs.TaskList)
+	rows, err := db.Query("SELECT description FROM tasks WHERE deleted=0")
+	if err != nil {
+		return nil, err
+	}
 
-func main() { /* ------- MAIN ------- */
+	var task structs.Task
+	for rows.Next() {
+
+		err = rows.Scan( &task.Description )
+		if err != nil {
+			panic(err.Error())
+		}
+
+		myTaskList.List = append(myTaskList.List, task)
+	}
+
+	return myTaskList, nil
+}
+
+/*
+
+func main() { /* ------- MAIN ------- 
 	
-	db := MysqlConnect()
+	db = MysqlConnect()
 
 	defer db.Close()
 
 	// Challenge form, suggested
-	/*  <difficulty>:<timestamp>:<authentication>:<userdefined>
+	  <difficulty>:<timestamp>:<authentication>:<userdefined>
 	*   4:20190509T071655Z:c09799c24f7d50f4:1KomQXRI9  <- valid stamp, where secret=="sendtokimball"
 	*   difficulty = number of zeros needed
 	*   timestamp = date+time as Format("20060102T150405Z")
 	*	authentication = sha256("<difficulty>:<timestamp>:<secret>") truncated to the first 16 hex characters
 	*	userdefined = any value that matches /[a-zA-Z0-9]{0,64}/
-	*/
+	
 
 
 	// perform a db.Query insert
@@ -95,8 +129,9 @@ func main() { /* ------- MAIN ------- */
 		panic(err.Error())
 	}
 
-	fmt.Printf("%d, %s, %s", task.TaskId, task.Title, task.Date.Format(time.RFC3339))
+	fmt.Printf("%d, %s, %b, %s, %s, %s", task.Task_id, task.Timestamp.Format(time.RFC3339), task.Deleted, task.Description, task.Ip_address, task.Stamp)
 
 }
 
 
+*/

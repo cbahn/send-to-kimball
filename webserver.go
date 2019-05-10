@@ -12,6 +12,11 @@ import (
 	"io"
 	"time"
 	"github.com/gorilla/mux"
+	"text/template"
+	"./db"	
+	"./structs"
+	"database/sql"
+
 )
 
 func SetMyCookie(response http.ResponseWriter){
@@ -41,10 +46,6 @@ func GenericHandler(response http.ResponseWriter, request *http.Request){
 	fmt.Fprintf(response, " request.Form       '%v'\n", request.Form)
 	fmt.Fprintf(response, " request.Cookies()  '%v'\n", request.Cookies())
 	fmt.Fprintf(response, " request.RemoteAddr '%v'\n", request.RemoteAddr)
-}
-
-func AboutHandler(response http.ResponseWriter, request *http.Request){
-	http.ServeFile(response, request, "about.html")
 }
 
 // Respond to the URL /home with an html home page
@@ -177,18 +178,32 @@ func SendHandler(response http.ResponseWriter, request *http.Request){
 }
 
 func ListHandler(response http.ResponseWriter, request *http.Request){
-	// Respond to the index url
-
-	response.Header().Set("Content-type", "text/html")
-	webpage, err := ioutil.ReadFile("list.html")
-	if err != nil { 
-		http.Error(response, fmt.Sprintf("home.html file error %v", err), 500)
+	// Read values in from the database
+	var myTaskList *structs.TaskList
+	myTaskList, err := db.SelectAllVisibleTaskDescriptions(db_conn)
+	if err != nil {
+		http.Error(response, "500 Error reading database", 500)
+		panic(err)
 	}
-	fmt.Fprint(response, string(webpage));
-	fmt.Println("Sent response to /home")
 
+	// Load in the list template
+	// (someday this should be loaded only once at startup)
+	t, err := template.ParseFiles("list.tmpl")
+	if err != nil {
+		http.Error(response, "500 Error could not parse list.html template", 500)
+		panic(err)
+	}
+
+	// Execute template
+	response.Header().Set("Content-type", "text/html")
+	err = t.Execute(response, *myTaskList)
+	if err != nil {
+		http.Error(response, "500 Error could not execute list.html template", 500)
+		panic(err)
+	}
 }
 
+var db_conn *sql.DB
 
 func main(){
 	port := 8097
@@ -198,9 +213,12 @@ func main(){
 	// it's not garbage like the default one.
 	mux := mux.NewRouter()
 
+	// Establish database connection
+	db_conn = db.MysqlConnect()
+	defer db_conn.Close()
+
 	/*
 	mux.Handle("/generic/", 		http.HandlerFunc( GenericHandler  ))
-	mux.Handle("/about",			http.HandlerFunc( AboutHandler    ))
 	mux.Handle("/vote",				http.HandlerFunc( VoteGETHandler  )).Methods("GET")
 	mux.Handle("/vote",				http.HandlerFunc( VotePOSTHandler )).Methods("POST")
 	*/
