@@ -93,6 +93,25 @@ func SelectAllVisibleTaskDescriptions(db *sql.DB) (*structs.TaskList, error) {
 	return myTaskList, nil
 }
 
+// Returns the number of successful posts within the last since minutes
+
+func NumberOfPostsSince(db *sql.DB, since int ) int {
+	rows, err := db.Query("SELECT COUNT(*) FROM tasks WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? MINUTE)", since)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	// Must be called once before scanning
+	rows.Next()
+
+	var numberOfResults int
+	rows.Scan( &numberOfResults )
+
+	return numberOfResults
+}
+
+
 /*
 
 func main() { /* ------- MAIN ------- 

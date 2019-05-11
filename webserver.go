@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"strconv"
 	"log"
 	"net/http"
@@ -14,18 +13,22 @@ import (
 	"./structs"
 	"./stampmaster"
 	"database/sql"
-
 )
 
-// Respond to the URL /home with an html home page
-func HomeHandler(response http.ResponseWriter, request *http.Request){
-	response.Header().Set("Content-type", "text/html")
-	webpage, err := ioutil.ReadFile("index.html")
-	if err != nil { 
-		http.Error(response, fmt.Sprintf("home.html file error %v", err), 500)
-	}
-	fmt.Fprint(response, string(webpage));
-	fmt.Println("Sent response to /home")
+const (
+	SECRET = "sendtokimball"
+)
+
+// This function defines how the difficulty is computed and used
+func computeDifficulty() int {
+	/* Right now the difficulty is defined as
+	16 + number of posts in the last  2 minutes + number of posts in the last 10 minutes
+	Most likely this needs tweaking */
+
+	difficulty := 16
+	difficulty += db.NumberOfPostsSince(db_conn,  2)
+	difficulty += db.NumberOfPostsSince(db_conn, 10)
+	return difficulty
 }
 
 // Loads up files from the /res folder
@@ -82,11 +85,36 @@ func SendHandler(response http.ResponseWriter, request *http.Request){
 		fmt.Printf("%s = %s\n",k,v)
 	}
 
+	fmt.Fprintf(response,"In the last 100 minutes, there have been %d posts\n", db.NumberOfPostsSince(db_conn, 100) )
 	fmt.Fprintf(response,"Registration successful. Your inner man is now aligned with nature\n%s",stampmaster.CreateNewStamp(4,"k").ToString())
 
 	err := db.InsertNewTask(db_conn, request.RemoteAddr , request.FormValue("description"), "this:is:a:stamp")
 	if err != nil {
 		http.Error(response, "422 Could not process submission", 422)
+	}
+}
+
+//http.Error(response, fmt.Sprintf("home.html file error %v", err), 500)
+
+// Respond to the URL /home with an html home page
+func HomeHandler(response http.ResponseWriter, request *http.Request){
+	templateFile := "index.tmpl"
+	// Load in the list template
+	// (someday this should be loaded only once at startup)
+	t, err := template.ParseFiles(templateFile)
+	if err != nil {
+		http.Error(response, fmt.Sprintf("500 Error parsing %s: %v", templateFile, err), 500)
+		return
+	}
+
+	stampToInsert := stampmaster.CreateNewStamp(computeDifficulty(), SECRET).ToString()
+
+	// Execute template
+	response.Header().Set("Content-type", "text/html")
+	err = t.Execute(response, stampToInsert)
+	if err != nil {
+		http.Error(response, fmt.Sprintf("500 Error could not execute template: %v",err), 500)
+		return
 	}
 }
 
