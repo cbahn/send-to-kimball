@@ -8,45 +8,14 @@ import (
 	"net/http"
 	"regexp"
 	"path/filepath"
-	"encoding/json"
-	"io"
-	"time"
 	"github.com/gorilla/mux"
 	"text/template"
 	"./db"	
 	"./structs"
+	"./stampmaster"
 	"database/sql"
 
 )
-
-func SetMyCookie(response http.ResponseWriter){
-	// Add a simplistic cookie to the response.
-	cookie := http.Cookie{Name: "testcookiename", Value:"testcookievalue"}
-	http.SetCookie(response, &cookie)
-}
-
-// Respond to URLs of the form /generic/...
-func GenericHandler(response http.ResponseWriter, request *http.Request){
-
-	// Set cookie and MIME type in the HTTP headers.
-	SetMyCookie(response)
-	response.Header().Set("Content-type", "text/plain")
-
-	// Parse URL and POST data into the request.Form
-	err := request.ParseForm()
-	if err != nil {
-		http.Error(response, fmt.Sprintf("error parsing url %v", err), 500)
-	}
-
-	// Send the text diagnostics to the client.
-	fmt.Fprint(response,  "FooWebHandler says ... \n")
-	fmt.Fprintf(response, " request.Method     '%v'\n", request.Method)
-	fmt.Fprintf(response, " request.RequestURI '%v'\n", request.RequestURI)
-	fmt.Fprintf(response, " request.URL.Path   '%v'\n", request.URL.Path)
-	fmt.Fprintf(response, " request.Form       '%v'\n", request.Form)
-	fmt.Fprintf(response, " request.Cookies()  '%v'\n", request.Cookies())
-	fmt.Fprintf(response, " request.RemoteAddr '%v'\n", request.RemoteAddr)
-}
 
 // Respond to the URL /home with an html home page
 func HomeHandler(response http.ResponseWriter, request *http.Request){
@@ -57,73 +26,6 @@ func HomeHandler(response http.ResponseWriter, request *http.Request){
 	}
 	fmt.Fprint(response, string(webpage));
 	fmt.Println("Sent response to /home")
-}
-
-// Serves the vote.html file
-func VoteGETHandler(response http.ResponseWriter, request *http.Request){
-	http.ServeFile(response, request, "vote.html")
-}
-
-
-
-// A utility function for converting the request.Body into a map[string]string.
-/* This is quite fragile. If the json has a non-string type in it then the marshall fails.
-   In general, converting JSON into a go object is awkward because of go's static typing.
-   We could write our own Unmarshaler but I'm going to stick with a weaker, simpler solution
-   and pass the numeric values as strings then convert them.
-*/// https://engineering.bitnami.com/articles/dealing-with-json-with-non-homogeneous-types-in-go.html
-func jsonReaderToMap(jsonReader io.ReadCloser) (map[string]string, error) {
-	jsonBytes, err :=  ioutil.ReadAll(jsonReader)
-	if err != nil {
-		panic(err) // What could possibilty go wrong?
-	}
-
-	jsonMap := make(map[string]string)
-	err = json.Unmarshal(jsonBytes, &jsonMap)
-
-	// Whatever the error was, return it
-	// They gotta deal with that shit upstream
-	return jsonMap, err
-}
-
-
-// This recieves votes as POST requests to /vote and records them to the database
-func VotePOSTHandler(response http.ResponseWriter, request *http.Request){
-
-	// Render the raw post into postData, of type map[string]string
-	postData, err := jsonReaderToMap(request.Body)
-	if err != nil {
-		fmt.Printf("error: %s\n", err)
-		return
-	}
-
-	// Count up the total number of votes, and also validate the vote json
-	totalVotes := 0
-	for _, v := range postData {
-		i, err := strconv.Atoi(v)
-		if err != nil {
-			fmt.Println("Error while converting POST json data to int: ",err)
-			return;
-		}
-		totalVotes += i
-	}
-
-	// Read usernamecookie into string username
-	// If error, default to ""
-	var username string
-	if usernameCookie, err := request.Cookie("username"); err == nil {
-		// Validate the username's value against our requirements
-		var re = regexp.MustCompile(`^[A-Za-z0-9 ]{1,20}$`)
-		if re.MatchString(usernameCookie.Value) {
-			username = usernameCookie.Value
-		}
-	}
-
-	fmt.Printf("%s: %s,%s - %d votes\n",time.Now().Format("20060102150405"),request.RemoteAddr,username,totalVotes)
-
-	// Send a string as a response
-	response.Header().Set("Content-type", "text/plain")
-	fmt.Fprintf(response, "{\"reponse\":\"POST recieved - success! You voted %d times\"}", totalVotes)
 }
 
 // Loads up files from the /res folder
@@ -145,24 +47,30 @@ func ResHandler(response http.ResponseWriter, request *http.Request){
 	http.ServeFile(response, request, filepath.Join(resourceFolder,resource[1]) )
 }
 
-
-// Loads up files from the /res/pic folder
-// WARNING - ALL FILES IN THAT FOLDER WILL BE PUBLIC
-func PicHandler(response http.ResponseWriter, request *http.Request){
-	resourceFolder := "res/pic"
-	// Only resources with characters from a-z, A-Z, 0-9, and the _ (underscore) character will be valid.
-	var resURL = regexp.MustCompile(`^/res/pic/(\w+\.\w+)$`) 
-	var resource = resURL.FindStringSubmatch(request.URL.Path)
-	// resource is captured regex matches i.e. ["/res/file.txt", "file.txt"]
-
-	if len(resource) == 0 { // If url could not be parsed, send 404
-		fmt.Println("Could not parse /res request:", request.URL.Path)
-		http.Error(response, "404 page not found", 404)
+func ListHandler(response http.ResponseWriter, request *http.Request){
+	// Read values in from the database
+	var myTaskList *structs.TaskList
+	myTaskList, err := db.SelectAllVisibleTaskDescriptions(db_conn)
+	if err != nil {
+		http.Error(response, "500 Error reading database", 500)
 		return
 	}
 
-	// Everything's good, serve up the file
-	http.ServeFile(response, request, filepath.Join(resourceFolder,resource[1]) )
+	// Load in the list template
+	// (someday this should be loaded only once at startup)
+	t, err := template.ParseFiles("list.tmpl")
+	if err != nil {
+		http.Error(response, "500 Error could not parse list.html template", 500)
+		return
+	}
+
+	// Execute template
+	response.Header().Set("Content-type", "text/html")
+	err = t.Execute(response, *myTaskList)
+	if err != nil {
+		http.Error(response, "500 Error could not execute list.html template", 500)
+		return
+	}
 }
 
 // This recieves votes as POST requests to /vote and records them to the database
@@ -174,62 +82,35 @@ func SendHandler(response http.ResponseWriter, request *http.Request){
 		fmt.Printf("%s = %s\n",k,v)
 	}
 
-	fmt.Fprintln(response,"Registration successful. Your inner man is now aligned with nature")
-}
+	fmt.Fprintf(response,"Registration successful. Your inner man is now aligned with nature\n%s",stampmaster.CreateNewStamp(4,"k").ToString())
 
-func ListHandler(response http.ResponseWriter, request *http.Request){
-	// Read values in from the database
-	var myTaskList *structs.TaskList
-	myTaskList, err := db.SelectAllVisibleTaskDescriptions(db_conn)
+	err := db.InsertNewTask(db_conn, request.RemoteAddr , request.FormValue("description"), "this:is:a:stamp")
 	if err != nil {
-		http.Error(response, "500 Error reading database", 500)
-		panic(err)
-	}
-
-	// Load in the list template
-	// (someday this should be loaded only once at startup)
-	t, err := template.ParseFiles("list.tmpl")
-	if err != nil {
-		http.Error(response, "500 Error could not parse list.html template", 500)
-		panic(err)
-	}
-
-	// Execute template
-	response.Header().Set("Content-type", "text/html")
-	err = t.Execute(response, *myTaskList)
-	if err != nil {
-		http.Error(response, "500 Error could not execute list.html template", 500)
-		panic(err)
+		http.Error(response, "422 Could not process submission", 422)
 	}
 }
 
+/* ================================================== */
+
+// Making the db variable global feels appropriate because there is only one database
 var db_conn *sql.DB
 
 func main(){
-	port := 8097
+	port := 80
 	portstring := strconv.Itoa(port)
 
 	// We're using gorilla/mux as the router because
-	// it's not garbage like the default one.
+	//  it's not garbage like the default one.
 	mux := mux.NewRouter()
 
 	// Establish database connection
 	db_conn = db.MysqlConnect()
 	defer db_conn.Close()
 
-	/*
-	mux.Handle("/generic/", 		http.HandlerFunc( GenericHandler  ))
-	mux.Handle("/vote",				http.HandlerFunc( VoteGETHandler  )).Methods("GET")
-	mux.Handle("/vote",				http.HandlerFunc( VotePOSTHandler )).Methods("POST")
-	*/
-
-	mux.Handle("/res/{resource}",	http.HandlerFunc( ResHandler      )).Methods("GET")
-	mux.Handle("/res/pic/{picture}",http.HandlerFunc( PicHandler	  )).Methods("GET")
-	
-
-	mux.Handle("/list",				http.HandlerFunc( ListHandler     )).Methods("GET")
-	mux.Handle("/send",				http.HandlerFunc( SendHandler	  )).Methods("POST")
-	mux.Handle("/", 				http.HandlerFunc( HomeHandler     )).Methods("GET")
+	mux.Handle("/res/{resource}",	http.HandlerFunc( ResHandler  )).Methods("GET")
+	mux.Handle("/list",				http.HandlerFunc( ListHandler )).Methods("GET")
+	mux.Handle("/send",				http.HandlerFunc( SendHandler )).Methods("POST")
+	mux.Handle("/", 				http.HandlerFunc( HomeHandler )).Methods("GET")
 
 	// Start listing on a given port with these routes on this server.
 	log.Print("Listening on port " + portstring + " ... ")
