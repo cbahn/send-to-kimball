@@ -1,6 +1,8 @@
-## SQL info
+SQL info
+========
 
 The following is the definition of the table for tasks
+
 ```
  CREATE TABLE `tasks` (
   `task_id` int(11) NOT NULL AUTO_INCREMENT,

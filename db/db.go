@@ -53,7 +53,7 @@ func InsertNewTask(db *sql.DB, ipAddress string, description string, stamp strin
 	return err
 }
 
-/* Should I name this such a long, descriptive name? I'm not sure
+/* Should this have such a long, descriptive name? I'm not sure
  */
 func SelectAllVisibleTaskDescriptions(db *sql.DB) (*structs.TaskList, error) {
 	myTaskList := new(structs.TaskList)
